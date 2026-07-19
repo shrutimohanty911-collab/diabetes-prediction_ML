@@ -92,19 +92,44 @@ if submitted:
         # ---- SHAP explanation ----
         st.subheader("Why this prediction?")
         try:
-            shap_values = explainer.shap_values(input_scaled)
-            if isinstance(shap_values, list):
-                shap_values = shap_values[1]  # class 1 (diabetic)
+            sv_raw = explainer.shap_values(input_scaled)
 
-            fig, ax = plt.subplots(figsize=(8, 4))
-            shap.summary_plot(
-                shap_values, input_data, plot_type="bar",
-                show=False, plot_size=None
+            # Handle different SHAP output shapes across versions/models
+            if isinstance(sv_raw, list):
+                # older API: list of per-class arrays, shape (n_samples, n_features)
+                sv = sv_raw[1][0]
+                base_value = (
+                    explainer.expected_value[1]
+                    if isinstance(explainer.expected_value, (list, np.ndarray))
+                    else explainer.expected_value
+                )
+            elif sv_raw.ndim == 3:
+                # shape (n_samples, n_features, n_classes)
+                sv = sv_raw[0, :, 1]
+                base_value = (
+                    explainer.expected_value[1]
+                    if isinstance(explainer.expected_value, (list, np.ndarray))
+                    else explainer.expected_value
+                )
+            else:
+                # shape (n_samples, n_features)
+                sv = sv_raw[0]
+                base_value = explainer.expected_value
+
+            explanation = shap.Explanation(
+                values=sv,
+                base_values=base_value,
+                data=input_data.iloc[0].values,
+                feature_names=feature_names,
             )
+
+            fig = plt.figure(figsize=(8, 4))
+            shap.plots.bar(explanation, show=False)
+            plt.tight_layout()
             st.pyplot(fig, clear_figure=True)
             st.caption("Bars show which factors pushed the prediction toward higher or lower risk.")
         except Exception as e:
-            st.info("Explanation unavailable for this input.")
+            st.info(f"Explanation unavailable for this input. ({e})")
 
 st.divider()
 st.caption("Built with scikit-learn, XGBoost, SHAP, and Streamlit.")
