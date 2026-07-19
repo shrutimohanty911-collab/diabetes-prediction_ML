@@ -81,4 +81,4 @@ and is not a substitute for professional medical diagnosis.
 
 ## 👨‍💻 Author
 
-Arnav — B.Tech CSE Student
+Shruti — B.Tech CSE Student
