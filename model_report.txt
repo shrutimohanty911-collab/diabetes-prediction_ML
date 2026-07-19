@@ -1,0 +1,9 @@
+Diabetes Prediction - Model Comparison
+=============================================
+Logistic Regression   Accuracy: 70.78%   ROC-AUC: 0.8267
+Random Forest         Accuracy: 87.01%   ROC-AUC: 0.9472
+XGBoost               Accuracy: 87.66%   ROC-AUC: 0.9472
+SVM                   Accuracy: 83.77%   ROC-AUC: 0.8974
+Voting Ensemble       Accuracy: 86.36%   ROC-AUC: 0.9307
+
+Best model: Random Forest
