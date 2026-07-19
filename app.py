@@ -1,7 +1,7 @@
 """
 Diabetes Prediction App — Multi-page, soothing-blue, icon-based UI
 Streamlit front-end with custom theme, SVG icons, interactive charts,
-and SHAP-based explainability.
+color-coded risk badges, and SHAP-based explainability.
 """
 
 import streamlit as st
@@ -16,15 +16,37 @@ import plotly.express as px
 st.set_page_config(page_title="Diabetes Risk Predictor", page_icon="⬡", layout="wide")
 
 # ---------------------------------------------------------------------------
-# Palette
+# Palette — TEXT_SOFT darkened from the original for real AA contrast on BG.
+# Risk colors added so the result is instantly readable, not just colored text.
 # ---------------------------------------------------------------------------
-BLUE_DARK = "#0B2545"
-BLUE_MED = "#1E5F8C"
+BLUE_DARK   = "#0B2545"
+BLUE_MED    = "#1E5F8C"
 BLUE_ACCENT = "#3AA6D9"
-BLUE_SOFT = "#8ECAE6"
-BG = "#EAF6FB"
-CARD_BG = "rgba(58,166,217,0.06)"
-TEXT_SOFT = "#4A6178"
+BLUE_SOFT   = "#8ECAE6"
+BG          = "#EAF6FB"
+CARD_BG     = "rgba(58,166,217,0.06)"
+
+TEXT_MAIN   = "#0B2545"   # primary text / numbers — always this, never a light gray
+TEXT_SOFT   = "#3B5166"   # secondary text — darkened from #4A6178 for contrast
+
+RISK_LOW    = "#1E7A46"   # green  — low risk
+RISK_MED    = "#B4780A"   # amber  — moderate risk (darkened for contrast on white)
+RISK_HIGH   = "#B3261E"   # red    — high risk
+
+RISK_LOW_BG  = "rgba(30,122,70,0.10)"
+RISK_MED_BG  = "rgba(180,120,10,0.10)"
+RISK_HIGH_BG = "rgba(179,38,30,0.10)"
+
+
+def risk_band(probability: float):
+    """Return (label, color, bg, description) for a 0-1 probability."""
+    if probability < 0.30:
+        return "Lower risk", RISK_LOW, RISK_LOW_BG, "Indicators are mostly within typical ranges."
+    elif probability < 0.70:
+        return "Moderate risk", RISK_MED, RISK_MED_BG, "Some indicators fall outside typical ranges."
+    else:
+        return "Higher risk", RISK_HIGH, RISK_HIGH_BG, "Several indicators fall outside typical ranges."
+
 
 # ---------------------------------------------------------------------------
 # SVG icon set (heroicons-style outline icons, single color, no branding)
@@ -45,11 +67,14 @@ def icon(name, size=18, color=BLUE_ACCENT):
         "activity": '<path d="M3 12h4l2-8 4 16 2-8h6"/>',
         "search": '<circle cx="11" cy="11" r="6"/><path d="M20 20l-3.5-3.5"/>',
         "shield": '<path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5z"/>',
+        "check": '<path d="M5 13l4 4L19 7"/>',
+        "alert": '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L14.7 3.86a2 2 0 0 0-3.4 0z"/>',
     }
     path = icons.get(name, "")
     return f'''<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none"
         stroke="{color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-        style="vertical-align:middle;margin-right:6px">{path}</svg>'''
+        style="vertical-align:middle;margin-right:6px;flex-shrink:0">{path}</svg>'''
+
 
 # ---------------------------------------------------------------------------
 # Global CSS
@@ -57,91 +82,208 @@ def icon(name, size=18, color=BLUE_ACCENT):
 st.markdown(f"""
 <style>
 @keyframes fadeInUp {{
-    from {{ opacity: 0; transform: translateY(12px); }}
+    from {{ opacity: 0; transform: translateY(14px); }}
     to {{ opacity: 1; transform: translateY(0); }}
 }}
 @keyframes softPulse {{
     0% {{ box-shadow: 0 0 0 0 rgba(58,166,217,0.35); }}
-    70% {{ box-shadow: 0 0 0 12px rgba(58,166,217,0); }}
+    70% {{ box-shadow: 0 0 0 14px rgba(58,166,217,0); }}
     100% {{ box-shadow: 0 0 0 0 rgba(58,166,217,0); }}
 }}
+@keyframes shimmer {{
+    0% {{ background-position: -200% 0; }}
+    100% {{ background-position: 200% 0; }}
+}}
+
+html, body, [class*="css"] {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+}}
+
 .stApp {{
     background: radial-gradient(circle at 20% 0%, #FFFFFF 0%, {BG} 60%);
 }}
+
+/* ---------- Typography ---------- */
 .hero-title {{
-    font-size: 2.4rem;
-    font-weight: 750;
-    color: #0B2545;
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: {TEXT_MAIN};
     animation: fadeInUp 0.6s ease-out;
     letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
 }}
 .hero-sub {{
     color: {TEXT_SOFT};
     font-size: 1.05rem;
+    font-weight: 500;
     animation: fadeInUp 0.8s ease-out;
-    margin-bottom: 1.2rem;
+    margin-bottom: 1.3rem;
 }}
 .section-label {{
-    color: {BLUE_SOFT};
-    font-weight: 600;
+    color: {BLUE_MED};
+    font-weight: 700;
     font-size: 1.05rem;
-    margin-bottom: 0.6rem;
+    margin: 1.4rem 0 0.7rem 0;
+    display: flex;
+    align-items: center;
     animation: fadeInUp 0.5s ease-out;
 }}
+
+/* ---------- Cards ---------- */
 .info-card {{
     background: #FFFFFF;
-    border: 1px solid rgba(30,95,140,0.12);
+    border: 1px solid rgba(30,95,140,0.14);
     border-radius: 14px;
-    padding: 1.1rem 1.3rem;
-    margin-bottom: 0.8rem;
-    animation: fadeInUp 0.5s ease-out;
-    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-    box-shadow: 0 2px 10px rgba(30,95,140,0.06);
+    padding: 1.15rem 1.35rem;
+    margin-bottom: 0.9rem;
+    color: {TEXT_MAIN};
+    font-weight: 500;
+    line-height: 1.5;
+    animation: fadeInUp 0.5s ease-out both;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    box-shadow: 0 2px 10px rgba(30,95,140,0.07);
 }}
 .info-card:hover {{
-    transform: translateY(-2px);
-    border-color: rgba(58,166,217,0.5);
-    box-shadow: 0 6px 18px rgba(30,95,140,0.12);
+    transform: translateY(-3px);
+    border-color: rgba(58,166,217,0.55);
+    box-shadow: 0 10px 24px rgba(30,95,140,0.15);
 }}
+.info-card b {{ color: {TEXT_MAIN}; }}
+.info-card .sub {{ color: {TEXT_SOFT}; font-weight: 400; }}
+
+/* staggered entrance for the 3 home cards */
+.stagger-1 {{ animation-delay: 0.05s; }}
+.stagger-2 {{ animation-delay: 0.15s; }}
+.stagger-3 {{ animation-delay: 0.25s; }}
+
+/* ---------- Custom metric tiles (replaces st.metric so colors stay ours) ---------- */
+.metric-tile {{
+    background: #FFFFFF;
+    border: 1px solid rgba(30,95,140,0.14);
+    border-radius: 14px;
+    padding: 1rem 1.2rem;
+    text-align: left;
+    animation: fadeInUp 0.6s ease-out both;
+    box-shadow: 0 2px 10px rgba(30,95,140,0.06);
+    transition: transform 0.18s ease;
+}}
+.metric-tile:hover {{ transform: translateY(-3px); }}
+.metric-tile .label {{
+    color: {TEXT_SOFT};
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}}
+.metric-tile .value {{
+    color: {TEXT_MAIN};
+    font-size: 1.9rem;
+    font-weight: 800;
+    line-height: 1.3;
+}}
+.metric-tile .tag {{
+    color: {BLUE_ACCENT};
+    font-size: 0.85rem;
+    font-weight: 700;
+}}
+
+/* ---------- Result card: color-coded by risk, not just decorative ---------- */
 .result-card {{
     border-radius: 16px;
-    padding: 1.4rem 1.6rem;
+    padding: 1.5rem 1.7rem;
     margin: 1rem 0;
     animation: fadeInUp 0.5s ease-out, softPulse 2s ease-out 1;
-    border: 1px solid rgba(58,166,217,0.35);
-    background: linear-gradient(135deg, rgba(58,166,217,0.14), rgba(255,255,255,0.6));
+    border: 1.5px solid var(--risk-color);
+    background: var(--risk-bg);
 }}
+.result-card h3 {{
+    color: var(--risk-color);
+    margin: 0 0 0.3rem 0;
+    display: flex;
+    align-items: center;
+    font-size: 1.5rem;
+}}
+.result-card .prob {{
+    color: {TEXT_MAIN};
+    font-size: 2.1rem;
+    font-weight: 800;
+    margin: 0.2rem 0;
+}}
+.result-card .desc {{ color: {TEXT_SOFT}; font-weight: 500; margin: 0; }}
+
+.risk-badge {{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.25rem 0.7rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    background: var(--risk-color);
+    color: #FFFFFF;
+}}
+
+/* legend chips under the gauge */
+.legend-row {{ display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.4rem; }}
+.legend-chip {{
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.82rem; font-weight: 600; color: {TEXT_SOFT};
+}}
+.legend-dot {{ width: 10px; height: 10px; border-radius: 50%; display: inline-block; }}
+
+/* ---------- Buttons ---------- */
 div.stButton > button, div.stFormSubmitButton > button {{
     background: linear-gradient(90deg, {BLUE_MED} 0%, {BLUE_ACCENT} 100%);
     color: white;
     border: none;
     border-radius: 10px;
-    padding: 0.6rem 1.5rem;
-    font-weight: 600;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    padding: 0.65rem 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
     width: 100%;
 }}
 div.stButton > button:hover, div.stFormSubmitButton > button:hover {{
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(58,166,217,0.35);
+    box-shadow: 0 10px 22px rgba(58,166,217,0.4);
+    filter: brightness(1.05);
 }}
+div.stButton > button:active, div.stFormSubmitButton > button:active {{
+    transform: translateY(0px) scale(0.98);
+}}
+
 div[data-testid="stForm"] {{
     border-radius: 18px;
-    padding: 1.6rem;
-    border: 1px solid rgba(30,95,140,0.12);
+    padding: 1.7rem;
+    border: 1px solid rgba(30,95,140,0.14);
     background: #FFFFFF;
     animation: fadeInUp 0.7s ease-out;
-    box-shadow: 0 2px 14px rgba(30,95,140,0.06);
+    box-shadow: 0 2px 14px rgba(30,95,140,0.07);
 }}
+
 section[data-testid="stSidebar"] {{
     background: #DCEEFB;
-    border-right: 1px solid rgba(30,95,140,0.1);
+    border-right: 1px solid rgba(30,95,140,0.12);
 }}
+section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] p {{
+    color: {TEXT_MAIN} !important;
+    font-weight: 600;
+}}
+
 .field-label {{
     font-size: 0.92rem;
-    color: {TEXT_SOFT};
+    font-weight: 600;
+    color: {TEXT_MAIN};
     margin-bottom: -0.6rem;
-    margin-top: 0.4rem;
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+}}
+
+/* Make Streamlit's own caption / info text readable on the light bg */
+.stCaption, [data-testid="stCaptionContainer"] p {{
+    color: {TEXT_SOFT} !important;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -169,8 +311,8 @@ MODEL_RESULTS = {
 
 @st.cache_data
 def load_reference_data():
-    cols = ["Pregnancies","Glucose","BloodPressure","SkinThickness",
-            "Insulin","BMI","DiabetesPedigreeFunction","Age","Outcome"]
+    cols = ["Pregnancies", "Glucose", "BloodPressure", "SkinThickness",
+            "Insulin", "BMI", "DiabetesPedigreeFunction", "Age", "Outcome"]
     url = "https://raw.githubusercontent.com/jbrownlee/Datasets/master/pima-indians-diabetes.data.csv"
     return pd.read_csv(url, names=cols)
 
@@ -180,7 +322,7 @@ def load_reference_data():
 with st.sidebar:
     st.markdown(
         f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:1.4rem">'
-        f'{icon("shield", 26)}<span style="font-size:1.15rem;font-weight:700;color:#0B2545">Diabetes Risk AI</span></div>',
+        f'{icon("shield", 26)}<span style="font-size:1.15rem;font-weight:800;color:{TEXT_MAIN}">Diabetes Risk AI</span></div>',
         unsafe_allow_html=True
     )
     page = st.radio(
@@ -203,31 +345,46 @@ if page == "Home":
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown(
-            f'<div class="info-card">{icon("activity",22)}<b>Multiple tuned models</b><br>'
-            f'<span style="color:{TEXT_SOFT}">Logistic Regression, Random Forest, XGBoost, and an ensemble, '
+            f'<div class="info-card stagger-1">{icon("activity",22)}<b>Multiple tuned models</b><br>'
+            f'<span class="sub">Logistic Regression, Random Forest, XGBoost, and an ensemble, '
             f'each optimized with cross-validated hyperparameter search.</span></div>',
             unsafe_allow_html=True
         )
     with c2:
         st.markdown(
-            f'<div class="info-card">{icon("search",22)}<b>Explainable results</b><br>'
-            f'<span style="color:{TEXT_SOFT}">Every prediction shows exactly which factors influenced it, '
+            f'<div class="info-card stagger-2">{icon("search",22)}<b>Explainable results</b><br>'
+            f'<span class="sub">Every prediction shows exactly which factors influenced it, '
             f'using SHAP value analysis.</span></div>',
             unsafe_allow_html=True
         )
     with c3:
         st.markdown(
-            f'<div class="info-card">{icon("shield",22)}<b>Careful data handling</b><br>'
-            f'<span style="color:{TEXT_SOFT}">Hidden missing values in the dataset are detected and '
+            f'<div class="info-card stagger-3">{icon("shield",22)}<b>Careful data handling</b><br>'
+            f'<span class="sub">Hidden missing values in the dataset are detected and '
             f'properly corrected before training.</span></div>',
             unsafe_allow_html=True
         )
 
     st.markdown(f'<div class="section-label">{icon("chart",18)}Best model on test data</div>', unsafe_allow_html=True)
     b1, b2, b3 = st.columns(3)
-    b1.metric("Best Accuracy", "87.66%", "XGBoost")
-    b2.metric("Best ROC-AUC", "0.9472", "Random Forest")
-    b3.metric("Dataset Size", "768 patients", "8 features")
+    with b1:
+        st.markdown(
+            f'<div class="metric-tile stagger-1"><div class="label">Best Accuracy</div>'
+            f'<div class="value">87.66%</div><div class="tag">XGBoost</div></div>',
+            unsafe_allow_html=True
+        )
+    with b2:
+        st.markdown(
+            f'<div class="metric-tile stagger-2"><div class="label">Best ROC-AUC</div>'
+            f'<div class="value">0.9472</div><div class="tag">Random Forest</div></div>',
+            unsafe_allow_html=True
+        )
+    with b3:
+        st.markdown(
+            f'<div class="metric-tile stagger-3"><div class="label">Dataset Size</div>'
+            f'<div class="value">768</div><div class="tag">patients · 8 features</div></div>',
+            unsafe_allow_html=True
+        )
 
     st.caption("This tool provides a statistical estimate for educational purposes only and is not a medical diagnosis.")
 
@@ -243,22 +400,25 @@ elif page == "Train Model":
     auc = [MODEL_RESULTS[n]["roc_auc"] * 100 for n in names]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=names, y=acc, name="Accuracy (%)", marker_color=BLUE_ACCENT))
-    fig.add_trace(go.Bar(x=names, y=auc, name="ROC-AUC (x100)", marker_color=BLUE_SOFT))
+    fig.add_trace(go.Bar(x=names, y=acc, name="Accuracy (%)", marker_color=BLUE_MED,
+                          text=[f"{v:.1f}%" for v in acc], textposition="outside"))
+    fig.add_trace(go.Bar(x=names, y=auc, name="ROC-AUC (x100)", marker_color=BLUE_ACCENT,
+                          text=[f"{v:.1f}" for v in auc], textposition="outside"))
     fig.update_layout(
         barmode="group",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#0B2545"},
-        legend={"orientation": "h", "y": 1.1},
-        margin=dict(l=10, r=10, t=40, b=10),
+        font={"color": TEXT_MAIN, "size": 13},
+        legend={"orientation": "h", "y": 1.12},
+        margin=dict(l=10, r=10, t=50, b=10),
+        yaxis=dict(gridcolor="rgba(11,37,69,0.08)"),
     )
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown(f'<div class="section-label">{icon("search",18)}Why Random Forest was selected</div>', unsafe_allow_html=True)
     st.markdown(
         f'<div class="info-card">Random Forest was chosen for deployment because it achieved the highest '
-        f'ROC-AUC (0.9472) with balanced precision and recall across both classes, despite XGBoost scoring '
+        f'ROC-AUC (<b>0.9472</b>) with balanced precision and recall across both classes, despite XGBoost scoring '
         f'marginally higher on raw accuracy alone.</div>',
         unsafe_allow_html=True
     )
@@ -315,31 +475,45 @@ elif page == "Make Prediction":
             prediction = model.predict(input_scaled)[0]
             probability = model.predict_proba(input_scaled)[0][1]
 
+            label, r_color, r_bg, r_desc = risk_band(probability)
+
             fig_gauge = go.Figure(go.Indicator(
                 mode="gauge+number",
                 value=probability * 100,
-                number={"suffix": "%", "font": {"size": 38, "color": "#0B2545"}},
+                number={"suffix": "%", "font": {"size": 40, "color": TEXT_MAIN}},
                 gauge={
-                    "axis": {"range": [0, 100], "tickcolor": TEXT_SOFT},
-                    "bar": {"color": BLUE_ACCENT},
+                    "axis": {"range": [0, 100], "tickcolor": TEXT_SOFT, "tickfont": {"color": TEXT_SOFT}},
+                    "bar": {"color": r_color},
                     "bgcolor": "rgba(0,0,0,0)",
                     "steps": [
-                        {"range": [0, 40], "color": "rgba(58,166,217,0.15)"},
-                        {"range": [40, 70], "color": "rgba(58,166,217,0.3)"},
-                        {"range": [70, 100], "color": "rgba(30,95,140,0.45)"},
+                        {"range": [0, 30], "color": RISK_LOW_BG},
+                        {"range": [30, 70], "color": RISK_MED_BG},
+                        {"range": [70, 100], "color": RISK_HIGH_BG},
                     ],
                 },
             ))
             fig_gauge.update_layout(
                 height=260, margin=dict(l=20, r=20, t=30, b=10),
-                paper_bgcolor="rgba(0,0,0,0)", font={"color": "#0B2545"},
+                paper_bgcolor="rgba(0,0,0,0)", font={"color": TEXT_MAIN},
             )
             st.plotly_chart(fig_gauge, use_container_width=True)
 
-            label = "Higher risk of diabetes" if prediction == 1 else "Lower risk of diabetes"
             st.markdown(
-                f'<div class="result-card"><h3 style="color:#0B2545">{icon("pulse",22)}{label}</h3>'
-                f'<p style="color:{TEXT_SOFT}">Estimated probability: <b style="color:#0B2545">{probability*100:.1f}%</b></p></div>',
+                f'''<div class="legend-row">
+                    <span class="legend-chip"><span class="legend-dot" style="background:{RISK_LOW}"></span>Lower (0-30%)</span>
+                    <span class="legend-chip"><span class="legend-dot" style="background:{RISK_MED}"></span>Moderate (30-70%)</span>
+                    <span class="legend-chip"><span class="legend-dot" style="background:{RISK_HIGH}"></span>Higher (70-100%)</span>
+                </div>''',
+                unsafe_allow_html=True
+            )
+
+            icon_name = "check" if prediction == 0 else "alert"
+            st.markdown(
+                f'''<div class="result-card" style="--risk-color:{r_color};--risk-bg:{r_bg}">
+                    <h3>{icon(icon_name, 24, r_color)}{label} of diabetes</h3>
+                    <p class="prob">{probability*100:.1f}%</p>
+                    <p class="desc">{r_desc}</p>
+                </div>''',
                 unsafe_allow_html=True
             )
             st.caption(
@@ -364,9 +538,24 @@ elif page == "Make Prediction":
                     values=sv, base_values=base_value,
                     data=input_data.iloc[0].values, feature_names=feature_names,
                 )
+
+                # Force dark, high-contrast text everywhere in the matplotlib figure —
+                # this is what was making the SHAP explanation hard to read.
+                plt.rcParams.update({
+                    "text.color": TEXT_MAIN,
+                    "axes.labelcolor": TEXT_MAIN,
+                    "xtick.color": TEXT_MAIN,
+                    "ytick.color": TEXT_MAIN,
+                    "axes.edgecolor": TEXT_SOFT,
+                    "font.size": 11,
+                })
                 fig, ax = plt.subplots(figsize=(8, 4))
                 fig.patch.set_alpha(0)
+                ax.patch.set_alpha(0)
                 shap.plots.bar(explanation, show=False)
+                for txt in ax.texts:
+                    txt.set_color(TEXT_MAIN)
+                    txt.set_fontweight("bold")
                 plt.tight_layout()
                 st.pyplot(fig, clear_figure=True, transparent=True)
                 st.caption("Bars show which factors pushed the prediction toward higher or lower risk.")
@@ -388,36 +577,48 @@ elif page == "Analytics":
         counts = df["Outcome"].value_counts().rename({0: "Non-Diabetic", 1: "Diabetic"})
         fig_pie = px.pie(
             values=counts.values, names=counts.index, hole=0.55,
-            color_discrete_sequence=[BLUE_MED, BLUE_ACCENT]
+            color_discrete_sequence=[BLUE_MED, RISK_HIGH]
         )
-        fig_pie.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={"color": "#0B2545"}, margin=dict(t=10,b=10,l=10,r=10))
+        fig_pie.update_traces(textfont_color="#FFFFFF", textfont_size=14)
+        fig_pie.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)", font={"color": TEXT_MAIN},
+            margin=dict(t=10, b=10, l=10, r=10),
+            legend={"font": {"color": TEXT_MAIN}},
+        )
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with colB:
         st.markdown(f'<div class="section-label">{icon("search",18)}What drives predictions most</div>', unsafe_allow_html=True)
-        importances = pd.Series(model.feature_importances_, index=feature_names).sort_values()
-        fig_imp = go.Figure(go.Bar(
-            x=importances.values, y=importances.index, orientation="h",
-            marker_color=BLUE_ACCENT
-        ))
-        fig_imp.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": "#0B2545"}, margin=dict(t=10,b=10,l=10,r=10)
-        )
-        st.plotly_chart(fig_imp, use_container_width=True)
+        try:
+            importances = pd.Series(model.feature_importances_, index=feature_names).sort_values()
+            fig_imp = go.Figure(go.Bar(
+                x=importances.values, y=importances.index, orientation="h",
+                marker_color=BLUE_ACCENT
+            ))
+            fig_imp.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font={"color": TEXT_MAIN}, margin=dict(t=10, b=10, l=10, r=10),
+                xaxis=dict(gridcolor="rgba(11,37,69,0.08)"),
+            )
+            st.plotly_chart(fig_imp, use_container_width=True)
+        except AttributeError:
+            st.info("Feature importances aren't available for this model type.")
 
     st.markdown(f'<div class="section-label">{icon("droplet",18)}Feature distributions by outcome</div>', unsafe_allow_html=True)
     feature_choice = st.selectbox("Feature", feature_names, label_visibility="collapsed")
     fig_hist = px.histogram(
         df, x=feature_choice, color=df["Outcome"].map({0: "Non-Diabetic", 1: "Diabetic"}),
         barmode="overlay", opacity=0.75,
-        color_discrete_sequence=[BLUE_MED, BLUE_ACCENT]
+        color_discrete_sequence=[BLUE_MED, RISK_HIGH]
     )
     fig_hist.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#0B2545"}, legend_title_text=""
+        font={"color": TEXT_MAIN}, legend_title_text="",
+        legend={"font": {"color": TEXT_MAIN}},
+        xaxis=dict(gridcolor="rgba(11,37,69,0.06)"),
+        yaxis=dict(gridcolor="rgba(11,37,69,0.06)"),
     )
     st.plotly_chart(fig_hist, use_container_width=True)
 
-st.markdown(f'<hr style="border-color:rgba(142,202,230,0.1)">', unsafe_allow_html=True)
+st.markdown(f'<hr style="border-color:rgba(142,202,230,0.25)">', unsafe_allow_html=True)
 st.caption("Built with scikit-learn, XGBoost, SHAP, and Plotly.")
